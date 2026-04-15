@@ -1,0 +1,32 @@
+# Video Food Analyzer
+
+Paste a video link, preview/play it in the app, then run AI analysis to detect:
+
+- Whether the video contains food content
+- Ingredient list with estimated quantities
+
+The analysis is frame-first (visual evidence is prioritized) and transcript-assisted (audio transcription is used as secondary context).
+
+## Setup
+
+1. In `.env`, set:
+
+   `OPENAI_API_KEY=your_key_here`
+
+2. Install dependencies:
+
+   `npm install`
+
+3. Run:
+
+   `npm start`
+
+4. Open:
+
+   `http://localhost:3000`
+
+## Notes
+
+- YouTube links are previewed in an embedded player.
+- Direct video URLs are played in an HTML5 video player.
+- The backend extracts frames and audio locally, sends them to the model, and returns structured JSON.

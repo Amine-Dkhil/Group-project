@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Video Food Analyzer</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Video Food Analyzer</h1>
+      <p>Paste a video link, play it, then analyze if it contains food and ingredient quantities.</p>
+
+      <form id="analyzeForm">
+        <label for="videoUrl">Video URL</label>
+        <input id="videoUrl" type="url" placeholder="https://..." required />
+        <div class="actions">
+          <button type="button" id="loadBtn">Load Video</button>
+          <button type="submit">Analyze</button>
+        </div>
+      </form>
+
+      <section class="player-section">
+        <h2>Video Preview</h2>
+        <div id="videoContainer" class="video-container">
+          <p class="placeholder">Your video will appear here.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Analysis Result</h2>
+        <div id="status" class="status"></div>
+        <div id="analysisSummary" class="analysis-summary"></div>
+        <h3 class="section-heading">Ingredients</h3>
+        <div id="ingredientGrid" class="ingredient-grid"></div>
+        <h3 class="section-heading">Cooking Instructions</h3>
+        <div id="instructionsSection" class="instructions-section"></div>
+        <pre id="result" class="result"></pre>
+      </section>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>

@@ -3,42 +3,45 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Video Food Analyzer</title>
-    <link rel="stylesheet" href="styles.css" />
+    <meta name="theme-color" content="#faf7f2" />
+    <title>Kitchen Atlas — Recipes from video</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="app.css" />
   </head>
   <body>
-    <main class="container">
-      <h1>Video Food Analyzer</h1>
-      <p>Paste a video link, play it, then analyze if it contains food and ingredient quantities.</p>
+    <div id="app" class="app">
+      <header class="top-nav">
+        <a href="#/" class="brand" data-nav>
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-text">Kitchen Atlas</span>
+        </a>
+        <button type="button" class="nav-toggle" id="navToggle" aria-label="Open menu">
+          <span></span><span></span>
+        </button>
+        <nav class="nav-links" id="navLinks">
+          <a href="#/" data-nav>Home</a>
+          <a href="#/library" data-nav>Library</a>
+          <a href="#/import" data-nav>Import</a>
+          <a href="#/grocery" data-nav>Grocery</a>
+          <a href="#/planner" data-nav>Planner</a>
+        </nav>
+      </header>
 
-      <form id="analyzeForm">
-        <label for="videoUrl">Video URL</label>
-        <input id="videoUrl" type="url" placeholder="https://..." required />
-        <div class="actions">
-          <button type="button" id="loadBtn">Load Video</button>
-          <button type="submit">Analyze</button>
-        </div>
-      </form>
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-      <section class="player-section">
-        <h2>Video Preview</h2>
-        <div id="videoContainer" class="video-container">
-          <p class="placeholder">Your video will appear here.</p>
-        </div>
-      </section>
+      <main id="view" class="view"></main>
 
-      <section>
-        <h2>Analysis Result</h2>
-        <div id="status" class="status"></div>
-        <div id="analysisSummary" class="analysis-summary"></div>
-        <h3 class="section-heading">Ingredients</h3>
-        <div id="ingredientGrid" class="ingredient-grid"></div>
-        <h3 class="section-heading">Cooking Instructions</h3>
-        <div id="instructionsSection" class="instructions-section"></div>
-        <pre id="result" class="result"></pre>
-      </section>
-    </main>
+      <footer class="site-footer">
+        <p>Built for calm cooking — import from video, refine with care, cook with confidence.</p>
+        <a class="footer-link" href="/legacy-analyzer.html">Legacy analyzer</a>
+      </footer>
+    </div>
 
-    <script src="script.js"></script>
+    <script src="app.js" defer></script>
   </body>
 </html>

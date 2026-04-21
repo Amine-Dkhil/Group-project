@@ -1,0 +1,154 @@
+const express = require("express");
+const { runVideoImportAnalysis } = require("../services/importPipeline");
+const recipeRepository = require("../repositories/recipeRepository");
+const groceryRepository = require("../repositories/groceryRepository");
+const groceryService = require("../services/groceryService");
+const plannerService = require("../services/plannerService");
+const { resolveIngredientImageUrl } = require("../services/ingredientImageService");
+
+const router = express.Router();
+
+router.post("/import/analyze", async (req, res) => {
+  const { videoUrl } = req.body || {};
+  try {
+    const result = await runVideoImportAnalysis(videoUrl);
+    res.json(result);
+  } catch (error) {
+    const message = error && error.message ? error.message : "Analysis failed.";
+    const status = message.includes("required") || message.includes("valid http") ? 400 : 500;
+    res.status(status).json({ error: message, fallback: true });
+  }
+});
+
+router.post("/analyze", async (req, res) => {
+  const { videoUrl } = req.body || {};
+  try {
+    const result = await runVideoImportAnalysis(videoUrl);
+    res.json({
+      videoUrl: result.videoUrl,
+      analyzedFrames: result.analyzedFrames,
+      transcriptUsed: result.transcriptUsed,
+      analysis: result.legacyAnalysis,
+      recipeDraft: result.recipeDraft
+    });
+  } catch (error) {
+    const message = error && error.message ? error.message : "Analysis failed.";
+    const status = message.includes("required") || message.includes("valid http") ? 400 : 500;
+    res.status(status).json({ error: message });
+  }
+});
+
+router.get("/recipes", (req, res) => {
+  const recipes = recipeRepository.listRecipes({
+    search: req.query.search || "",
+    cuisine: req.query.cuisine || "",
+    difficulty: req.query.difficulty || "",
+    favorite: req.query.favorite,
+    tag: req.query.tag || "",
+    prepTimeMax: req.query.prepTimeMax,
+    sort: req.query.sort || "newest"
+  });
+  res.json({ recipes });
+});
+
+router.post("/recipes", (req, res) => {
+  try {
+    const body = req.body || {};
+    const recipe = recipeRepository.insertRecipe({
+      ...body,
+      favorite: Boolean(body.favorite)
+    });
+    res.status(201).json({ recipe });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Could not save recipe." });
+  }
+});
+
+router.get("/recipes/:id", (req, res) => {
+  const recipe = recipeRepository.getRecipeById(req.params.id);
+  if (!recipe) return res.status(404).json({ error: "Recipe not found." });
+  res.json({ recipe });
+});
+
+router.put("/recipes/:id", (req, res) => {
+  const recipe = recipeRepository.updateRecipe(req.params.id, req.body || {});
+  if (!recipe) return res.status(404).json({ error: "Recipe not found." });
+  res.json({ recipe });
+});
+
+router.delete("/recipes/:id", (req, res) => {
+  const ok = recipeRepository.deleteRecipe(req.params.id);
+  if (!ok) return res.status(404).json({ error: "Recipe not found." });
+  res.json({ ok: true });
+});
+
+router.post("/recipes/:id/favorite", (req, res) => {
+  const body = req.body || {};
+  const favorite =
+    typeof body.favorite === "boolean" ? body.favorite : Boolean(body.favorite ?? true);
+  const recipe = recipeRepository.setFavorite(req.params.id, favorite);
+  if (!recipe) return res.status(404).json({ error: "Recipe not found." });
+  res.json({ recipe });
+});
+
+router.post("/recipes/:id/duplicate", (req, res) => {
+  const recipe = recipeRepository.duplicateRecipe(req.params.id);
+  if (!recipe) return res.status(404).json({ error: "Recipe not found." });
+  res.status(201).json({ recipe });
+});
+
+router.get("/grocery-lists", (_req, res) => {
+  const lists = groceryRepository.listGroceryLists().map((row) => ({
+    id: row.id,
+    name: row.name,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  }));
+  res.json({ lists });
+});
+
+router.get("/grocery-lists/:id", (req, res) => {
+  const list = groceryRepository.getGroceryListWithItems(req.params.id);
+  if (!list) return res.status(404).json({ error: "List not found." });
+  res.json({ list });
+});
+
+router.post("/grocery-lists/from-recipes", (req, res) => {
+  const { recipeIds, name } = req.body || {};
+  if (!Array.isArray(recipeIds) || recipeIds.length === 0) {
+    return res.status(400).json({ error: "recipeIds must be a non-empty array." });
+  }
+  const list = groceryService.createListFromRecipes({ recipeIds, name });
+  res.status(201).json({ list });
+});
+
+router.put("/grocery-lists/:id", (req, res) => {
+  const list = groceryRepository.updateGroceryList(req.params.id, req.body || {});
+  if (!list) return res.status(404).json({ error: "List not found." });
+  res.json({ list });
+});
+
+router.get("/meal-plan", (req, res) => {
+  const entries = plannerService.getMealPlan({
+    startDate: req.query.startDate,
+    endDate: req.query.endDate
+  });
+  res.json({ entries });
+});
+
+router.put("/meal-plan", (req, res) => {
+  const { entries, startDate, endDate } = req.body || {};
+  if (!Array.isArray(entries)) {
+    return res.status(400).json({ error: "entries must be an array." });
+  }
+  const saved = plannerService.saveMealPlan(entries, { startDate, endDate });
+  res.json({ entries: saved });
+});
+
+router.get("/ingredient-image", async (req, res) => {
+  const name = typeof req.query.name === "string" ? req.query.name : "";
+  const imageUrl = await resolveIngredientImageUrl(name);
+  res.json({ name, imageUrl });
+});
+
+module.exports = router;

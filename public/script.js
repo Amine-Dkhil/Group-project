@@ -154,6 +154,23 @@ function getYouTubeEmbedUrl(url) {
   }
 }
 
+function getTikTokInfo(url) {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    if (!host.includes("tiktok.com")) return null;
+    const cleanPath = parsed.pathname.replace(/^\/+|\/+$/g, "");
+    const parts = cleanPath.split("/").filter(Boolean);
+    const videoIdx = parts.indexOf("video");
+    if (videoIdx >= 0 && parts[videoIdx + 1]) {
+      return { kind: "long", videoId: parts[videoIdx + 1] };
+    }
+    return { kind: "short" };
+  } catch {
+    return null;
+  }
+}
+
 function renderPlayer(videoUrl) {
   videoContainer.innerHTML = "";
   const youtubeEmbed = getYouTubeEmbedUrl(videoUrl);
@@ -169,13 +186,51 @@ function renderPlayer(videoUrl) {
     return;
   }
 
+  const tt = getTikTokInfo(videoUrl);
+  if (tt) {
+    if (tt.kind === "long") {
+      const iframe = document.createElement("iframe");
+      iframe.src = `https://www.tiktok.com/embed/v2/${tt.videoId}`;
+      iframe.title = "TikTok video player";
+      iframe.allow = "encrypted-media; picture-in-picture; web-share";
+      iframe.allowFullscreen = true;
+      iframe.style.aspectRatio = "9 / 16";
+      videoContainer.appendChild(iframe);
+      return;
+    }
+    statusEl.textContent = "Resolving TikTok short link…";
+    fetch(`/api/resolve-tiktok?url=${encodeURIComponent(videoUrl)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data && data.videoId) {
+          videoContainer.innerHTML = "";
+          const iframe = document.createElement("iframe");
+          iframe.src = `https://www.tiktok.com/embed/v2/${data.videoId}`;
+          iframe.title = "TikTok video player";
+          iframe.allow = "encrypted-media; picture-in-picture; web-share";
+          iframe.allowFullscreen = true;
+          iframe.style.aspectRatio = "9 / 16";
+          videoContainer.appendChild(iframe);
+          statusEl.textContent = "";
+        } else {
+          statusEl.textContent =
+            "Could not resolve this TikTok link to a preview, but Analyze will still work.";
+        }
+      })
+      .catch(() => {
+        statusEl.textContent =
+          "Could not resolve this TikTok link to a preview, but Analyze will still work.";
+      });
+    return;
+  }
+
   const video = document.createElement("video");
   video.src = videoUrl;
   video.controls = true;
   video.playsInline = true;
   video.addEventListener("error", () => {
     statusEl.textContent =
-      "This link cannot be played directly in the browser. For YouTube, use a standard watch/shorts/share URL.";
+      "This link cannot be played directly in the browser. Try a TikTok, YouTube, or direct video URL.";
   });
   videoContainer.appendChild(video);
 }

@@ -145,6 +145,39 @@ router.put("/meal-plan", (req, res) => {
   res.json({ entries: saved });
 });
 
+router.get("/resolve-tiktok", async (req, res) => {
+  const raw = typeof req.query.url === "string" ? req.query.url.trim() : "";
+  if (!raw) return res.status(400).json({ error: "url is required." });
+  let host;
+  try {
+    host = new URL(raw).hostname.toLowerCase();
+  } catch {
+    return res.status(400).json({ error: "Invalid URL." });
+  }
+  if (!host.endsWith("tiktok.com")) {
+    return res.status(400).json({ error: "Only tiktok.com URLs are supported." });
+  }
+  try {
+    const response = await fetch(raw, {
+      method: "GET",
+      redirect: "follow",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+      }
+    });
+    const finalUrl = response.url || raw;
+    const match = finalUrl.match(/\/video\/(\d+)/);
+    res.json({
+      originalUrl: raw,
+      resolvedUrl: finalUrl,
+      videoId: match ? match[1] : null
+    });
+  } catch (error) {
+    res.status(502).json({ error: error.message || "Failed to resolve TikTok URL." });
+  }
+});
+
 router.get("/ingredient-image", async (req, res) => {
   const name = typeof req.query.name === "string" ? req.query.name : "";
   const imageUrl = await resolveIngredientImageUrl(name);

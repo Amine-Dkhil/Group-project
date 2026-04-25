@@ -1,15 +1,15 @@
 {
-  "name": "video-food-analyzer",
+  "name": "lets-eat-tiktok",
   "version": "1.0.0",
-  "description": "Analyze video links for food content and ingredient quantities using AI.",
+  "description": "Let's Eat TikTok — turn TikTok (and other) recipe videos into structured recipes using AI.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "better-sqlite3": "^11.8.1",
-    "@google/generative-ai": "^0.24.1",
     "@distube/ytdl-core": "^4.16.12",
+    "@google/generative-ai": "^0.24.1",
+    "better-sqlite3": "^12.9.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.19.2",

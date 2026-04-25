@@ -1,4 +1,4 @@
-/* Kitchen Atlas — client app (vanilla JS, hash routing) */
+/* Let's Eat TikTok — client app (vanilla JS, hash routing) */
 
 const STORAGE_DRAFT = "kitchenAtlasDraft";
 const STORAGE_PLANNER = "kitchenAtlasMealPlan";
@@ -96,17 +96,70 @@ function getYouTubeEmbedUrl(url) {
   }
 }
 
+function getTikTokInfo(url) {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    if (!host.includes("tiktok.com")) return null;
+    const cleanPath = parsed.pathname.replace(/^\/+|\/+$/g, "");
+    const parts = cleanPath.split("/").filter(Boolean);
+    const videoIdx = parts.indexOf("video");
+    if (videoIdx >= 0 && parts[videoIdx + 1]) {
+      return { kind: "long", videoId: parts[videoIdx + 1] };
+    }
+    return { kind: "short" };
+  } catch {
+    return null;
+  }
+}
+
 function renderPlayer(container, videoUrl) {
   container.innerHTML = "";
-  const embed = getYouTubeEmbedUrl(videoUrl);
-  if (embed) {
+  const ytEmbed = getYouTubeEmbedUrl(videoUrl);
+  if (ytEmbed) {
     const iframe = document.createElement("iframe");
-    iframe.src = embed;
+    iframe.src = ytEmbed;
     iframe.title = "Video preview";
     iframe.allow =
       "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
     iframe.allowFullscreen = true;
     container.appendChild(iframe);
+    return;
+  }
+  const tt = getTikTokInfo(videoUrl);
+  if (tt) {
+    if (tt.kind === "long") {
+      const iframe = document.createElement("iframe");
+      iframe.src = `https://www.tiktok.com/embed/v2/${tt.videoId}`;
+      iframe.title = "TikTok video preview";
+      iframe.allow = "encrypted-media; picture-in-picture; web-share";
+      iframe.allowFullscreen = true;
+      iframe.style.aspectRatio = "9 / 16";
+      container.appendChild(iframe);
+      return;
+    }
+    container.innerHTML = '<p class="placeholder">Resolving TikTok short link…</p>';
+    fetch(`/api/resolve-tiktok?url=${encodeURIComponent(videoUrl)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data && data.videoId) {
+          container.innerHTML = "";
+          const iframe = document.createElement("iframe");
+          iframe.src = `https://www.tiktok.com/embed/v2/${data.videoId}`;
+          iframe.title = "TikTok video preview";
+          iframe.allow = "encrypted-media; picture-in-picture; web-share";
+          iframe.allowFullscreen = true;
+          iframe.style.aspectRatio = "9 / 16";
+          container.appendChild(iframe);
+        } else {
+          container.innerHTML =
+            '<p class="placeholder">Could not resolve this TikTok link to a preview, but analysis will still work. Click "Analyze video" to continue.</p>';
+        }
+      })
+      .catch(() => {
+        container.innerHTML =
+          '<p class="placeholder">Could not resolve this TikTok link to a preview, but analysis will still work. Click "Analyze video" to continue.</p>';
+      });
     return;
   }
   const video = document.createElement("video");
@@ -115,7 +168,7 @@ function renderPlayer(container, videoUrl) {
   video.playsInline = true;
   video.addEventListener("error", () => {
     container.innerHTML =
-      '<p class="placeholder">This link cannot be played inline. Try a standard YouTube URL or a direct video file.</p>';
+      '<p class="placeholder">This link cannot be played inline. Try a TikTok, YouTube, or direct video URL.</p>';
   });
   container.appendChild(video);
 }
@@ -161,7 +214,7 @@ async function renderHome(view) {
       <div class="import-row">
         <div class="field">
           <label for="homeVideoUrl">Recipe video link</label>
-          <input id="homeVideoUrl" class="input" type="url" placeholder="https://www.youtube.com/watch?v=..." />
+          <input id="homeVideoUrl" class="input" type="url" placeholder="https://www.tiktok.com/@user/video/... or YouTube link" />
         </div>
         <div style="align-self:end">
           <button class="btn btn-primary" type="button" id="homeGoImport">Import video</button>
@@ -255,7 +308,7 @@ async function renderImport(view) {
 
   view.innerHTML = `
     <h1 class="page-title">Import from video</h1>
-    <p class="page-sub">YouTube and direct video URLs are supported. Unsupported links show a clear message.</p>
+    <p class="page-sub">TikTok, YouTube, and direct video URLs are supported. Unsupported links show a clear message.</p>
 
     <div class="card-panel">
       <div class="import-row">

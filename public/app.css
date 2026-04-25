@@ -121,20 +121,6 @@ textarea {
   min-width: 200px;
 }
 
-@media (min-width: 880px) {
-  .nav-toggle {
-    display: none;
-  }
-  .nav-links {
-    display: flex;
-    position: static;
-    background: transparent;
-    border: 0;
-    box-shadow: none;
-    padding: 0;
-  }
-}
-
 .nav-toggle {
   width: 42px;
   height: 42px;
@@ -154,6 +140,20 @@ textarea {
   height: 2px;
   background: var(--text);
   border-radius: 2px;
+}
+
+@media (min-width: 880px) {
+  .nav-toggle {
+    display: none;
+  }
+  .nav-links {
+    display: flex;
+    position: static;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+  }
 }
 
 .view {

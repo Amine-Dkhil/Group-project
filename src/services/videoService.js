@@ -24,6 +24,18 @@ function youtubeVideoId(url) {
   return ytdl.getURLVideoID(url);
 }
 
+function isTikTokUrl(url) {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return (
+      host === "tiktok.com" ||
+      host.endsWith(".tiktok.com")
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function ensureDir(dirPath) {
   await fsp.mkdir(dirPath, { recursive: true });
 }
@@ -32,6 +44,16 @@ async function downloadYouTubeVideo(url, outputPath) {
   await ytDlp(url, {
     output: outputPath,
     format: "bv*+ba/b",
+    mergeOutputFormat: "mp4",
+    noPlaylist: true,
+    noWarnings: true
+  });
+}
+
+async function downloadTikTokVideo(url, outputPath) {
+  await ytDlp(url, {
+    output: outputPath,
+    format: "mp4/bv*+ba/b",
     mergeOutputFormat: "mp4",
     noPlaylist: true,
     noWarnings: true
@@ -94,6 +116,8 @@ async function downloadVideoToJob(videoUrl, videoPath) {
   if (isYouTubeUrl(videoUrl)) {
     youtubeVideoId(videoUrl);
     await downloadYouTubeVideo(videoUrl, videoPath);
+  } else if (isTikTokUrl(videoUrl)) {
+    await downloadTikTokVideo(videoUrl, videoPath);
   } else {
     await downloadDirectVideo(videoUrl, videoPath);
   }
@@ -102,9 +126,11 @@ async function downloadVideoToJob(videoUrl, videoPath) {
 module.exports = {
   TEMP_ROOT,
   isYouTubeUrl,
+  isTikTokUrl,
   youtubeVideoId,
   ensureDir,
   downloadYouTubeVideo,
+  downloadTikTokVideo,
   downloadDirectVideo,
   extractAudio,
   extractFrames,

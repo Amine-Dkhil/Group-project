@@ -13,6 +13,16 @@ The analysis is frame-first (visual evidence is prioritized) and transcript-assi
 1. In `.env`, set:
 
    `GEMINI_API_KEY=your_key_here`
+   
+   Optional for Shop and Macros:
+   
+   `GOOGLE_MAPS_API_KEY=`
+   
+   `PLACES_API_KEY=`
+   
+   `GROCERY_PRICE_API_KEY=`
+   
+   `USDA_API_KEY=`
 
 2. Install dependencies:
 

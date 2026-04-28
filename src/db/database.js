@@ -76,6 +76,14 @@ function migrate(db) {
 
     CREATE INDEX IF NOT EXISTS idx_meal_plan_date ON meal_plan_entries(date_str);
   `);
+
+  ensureColumn(db, "recipes", "macros_json", "TEXT NOT NULL DEFAULT ''");
+}
+
+function ensureColumn(db, table, column, sqlType) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (cols.some((col) => col && col.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${sqlType};`);
 }
 
 let singleton;

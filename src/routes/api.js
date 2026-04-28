@@ -5,6 +5,11 @@ const groceryRepository = require("../repositories/groceryRepository");
 const groceryService = require("../services/groceryService");
 const plannerService = require("../services/plannerService");
 const { resolveIngredientImageUrl } = require("../services/ingredientImageService");
+const shopService = require("../services/shopService");
+const { geocodeAddress } = require("../services/geocodingService");
+const { findNearbyStores, suggestAddresses } = require("../services/placesService");
+const { estimateBasket } = require("../services/priceEstimateService");
+const { calculateRecipeMacros } = require("../services/macroService");
 
 const router = express.Router();
 
@@ -122,6 +127,74 @@ router.post("/grocery-lists/from-recipes", (req, res) => {
   res.status(201).json({ list });
 });
 
+router.post("/shop/build-list", (req, res) => {
+  const { recipeIds } = req.body || {};
+  if (!Array.isArray(recipeIds) || !recipeIds.length) {
+    return res.status(400).json({ error: "recipeIds must be a non-empty array." });
+  }
+  const items = shopService.buildListFromRecipes(recipeIds);
+  res.json({ items });
+});
+
+router.get("/shop/address-suggest", async (req, res) => {
+  try {
+    const input = typeof req.query.input === "string" ? req.query.input : "";
+    if (!input.trim()) return res.json({ suggestions: [] });
+    const suggestions = await suggestAddresses(input);
+    res.json({ suggestions });
+  } catch (error) {
+    const status = /requires google maps api/i.test(error.message || "") ? 400 : 500;
+    res.status(status).json({ error: error.message || "Could not fetch address suggestions." });
+  }
+});
+
+router.post("/shop/geocode", async (req, res) => {
+  try {
+    const result = await geocodeAddress((req.body || {}).address);
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Could not geocode address." });
+  }
+});
+
+router.post("/shop/stores", async (req, res) => {
+  const { lat, lng, radiusMiles } = req.body || {};
+  if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) {
+    return res.status(400).json({ error: "lat and lng are required." });
+  }
+  try {
+    const stores = await findNearbyStores({
+      lat: Number(lat),
+      lng: Number(lng),
+      radiusMiles: Number(radiusMiles || 10),
+      limit: 10
+    });
+    res.json({ stores });
+  } catch (error) {
+    const status = /requires google maps api/i.test(error.message || "") ? 400 : 500;
+    res.status(status).json({ error: error.message || "Could not fetch stores." });
+  }
+});
+
+router.post("/shop/price-estimate", async (req, res) => {
+  try {
+    const basket = await estimateBasket((req.body || {}).items || []);
+    res.json(basket);
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Could not estimate basket." });
+  }
+});
+
+router.post("/shop/compare-stores", async (req, res) => {
+  try {
+    const result = await shopService.compareStores(req.body || {});
+    res.json(result);
+  } catch (error) {
+    const status = /required|invalid/i.test(error.message || "") ? 400 : 500;
+    res.status(status).json({ error: error.message || "Could not compare stores." });
+  }
+});
+
 router.put("/grocery-lists/:id", (req, res) => {
   const list = groceryRepository.updateGroceryList(req.params.id, req.body || {});
   if (!list) return res.status(404).json({ error: "List not found." });
@@ -143,6 +216,42 @@ router.put("/meal-plan", (req, res) => {
   }
   const saved = plannerService.saveMealPlan(entries, { startDate, endDate });
   res.json({ entries: saved });
+});
+
+router.post("/macros/calculate", async (req, res) => {
+  try {
+    const { recipeId, ingredients } = req.body || {};
+    if (!recipeId) return res.status(400).json({ error: "recipeId is required." });
+    const result = await calculateRecipeMacros({ recipeId, ingredientsOverride: ingredients });
+    res.json(result);
+  } catch (error) {
+    const status = /not found/i.test(error.message || "") ? 404 : 500;
+    res.status(status).json({ error: error.message || "Could not calculate macros." });
+  }
+});
+
+router.post("/macros/ingredient", async (req, res) => {
+  try {
+    const { recipeId, ingredient } = req.body || {};
+    if (!recipeId || !ingredient) {
+      return res.status(400).json({ error: "recipeId and ingredient are required." });
+    }
+    const result = await calculateRecipeMacros({ recipeId, ingredientsOverride: [ingredient] });
+    res.json({ ingredient: result.ingredients[0] || null, source: result.source, notes: result.notes });
+  } catch (error) {
+    const status = /not found/i.test(error.message || "") ? 404 : 500;
+    res.status(status).json({ error: error.message || "Could not calculate ingredient macros." });
+  }
+});
+
+router.put("/recipes/:id/macros", (req, res) => {
+  const macros = (req.body || {}).macros;
+  if (!macros || typeof macros !== "object") {
+    return res.status(400).json({ error: "macros object is required." });
+  }
+  const recipe = recipeRepository.updateRecipe(req.params.id, { macros });
+  if (!recipe) return res.status(404).json({ error: "Recipe not found." });
+  res.json({ recipe });
 });
 
 router.get("/resolve-tiktok", async (req, res) => {

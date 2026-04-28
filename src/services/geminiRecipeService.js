@@ -305,6 +305,7 @@ function buildLegacyAnalysisFromRecipe(recipe) {
 module.exports = {
   createGenAI,
   getModelCandidates,
+  runWithModels,
   safeJsonParse,
   validateAndSanitizeRecipe,
   transcribeAudio,

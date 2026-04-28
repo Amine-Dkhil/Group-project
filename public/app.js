@@ -1133,6 +1133,475 @@ async function renderPlanner(view) {
   });
 }
 
+function formatMoney(value) {
+  return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(Number(value || 0));
+}
+
+async function renderShop(view) {
+  let recipes = [];
+  try {
+    recipes = (await apiJson("/api/recipes?sort=newest")).recipes || [];
+  } catch {
+    recipes = [];
+  }
+
+  view.innerHTML = `
+    <h1 class="page-title">Shop</h1>
+    <p class="page-sub">Build a list from saved recipes and compare nearby stores by estimated basket cost.</p>
+    ${
+      recipes.length
+        ? ""
+        : `<div class="ghost-hero"><h3>No recipes saved</h3><p>Import and save at least one recipe first.</p><a class="btn btn-primary" href="#/import">Import recipe</a></div>`
+    }
+    <div class="card-panel">
+      <h3>Select recipes</h3>
+      <div class="shop-recipes">
+        ${recipes
+          .map(
+            (r) => `
+          <label class="shop-recipe-row">
+            <input type="checkbox" data-recipe-check value="${esc(r.id)}" />
+            <div>
+              <strong>${esc(r.title)}</strong>
+              <div class="card-meta">${Number(r.servings || 0)} servings · ${(r.ingredients || []).length} ingredients</div>
+            </div>
+          </label>
+        `
+          )
+          .join("")}
+      </div>
+      <button class="btn btn-secondary btn-small" id="buildShopList" type="button">Build shopping list</button>
+    </div>
+    <div class="card-panel">
+      <h3>Address</h3>
+      <div class="editor-grid">
+        <div class="field">
+          <label for="shopAddress">Street address</label>
+          <input id="shopAddress" class="input" placeholder="123 Main St, City, State" />
+          <div id="shopAddressSuggest" class="shop-suggest"></div>
+        </div>
+        <div class="field">
+          <label for="shopRadius">Radius</label>
+          <select id="shopRadius" class="select">
+            <option value="1">1 mile</option>
+            <option value="3">3 miles</option>
+            <option value="5">5 miles</option>
+            <option value="10" selected>10 miles</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary" type="button" id="shopCompare" style="margin-top:0.75rem">Find nearby stores</button>
+      <p class="page-sub" style="margin-top:0.75rem">Estimated prices, not live store inventory.</p>
+    </div>
+    <div class="card-panel">
+      <h3>Shopping list</h3>
+      <div id="shopListWrap" class="grocery-list"></div>
+    </div>
+    <div class="card-panel">
+      <h3>Store comparison</h3>
+      <div id="shopStoreWrap" class="grid"></div>
+    </div>
+    <div class="shop-sticky-bar" id="shopStickyBar">
+      <div id="shopStickyMeta">0 selected items</div>
+      <strong id="shopStickyTotal">${formatMoney(0)}</strong>
+    </div>
+  `;
+
+  let listItems = [];
+  let selectedLocation = null;
+  let currentStores = [];
+  let suggestTimer = null;
+
+  function readSelectedRecipeIds() {
+    return Array.from(view.querySelectorAll("[data-recipe-check]:checked")).map((x) => x.value);
+  }
+
+  async function recalcPricing() {
+    const selectedItems = listItems.filter((item) => item.selected).map((item) => ({
+      ...item,
+      amount: item.quantity
+    }));
+    const pricing = await apiJson("/api/shop/price-estimate", {
+      method: "POST",
+      body: JSON.stringify({ items: selectedItems })
+    });
+    const byName = new Map((pricing.pricedItems || []).map((p) => [p.ingredient, p]));
+    listItems = listItems.map((item) => ({
+      ...item,
+      estimatedPrice: byName.get(item.name)?.estimatedPrice || 0
+    }));
+    renderList();
+    $("#shopStickyMeta", view).textContent = `${selectedItems.length} selected items`;
+    $("#shopStickyTotal", view).textContent = formatMoney(pricing.total || 0);
+    renderStores(currentStores);
+  }
+
+  function renderList() {
+    const wrap = $("#shopListWrap", view);
+    if (!listItems.length) {
+      wrap.innerHTML = `<div class="ghost-hero"><h3>No items yet</h3><p>Select recipes and build your list.</p></div>`;
+      return;
+    }
+    wrap.innerHTML = listItems
+      .map(
+        (item, idx) => `
+      <div class="shop-item-row">
+        <label><input type="checkbox" data-shop-selected="${idx}" ${item.selected ? "checked" : ""} /> ${esc(item.name)}</label>
+        <div class="shop-item-controls">
+          <button class="btn btn-ghost btn-small" data-shop-step="${idx}" data-step="-1" type="button">-</button>
+          <input class="input shop-qty-input" data-shop-qty="${idx}" value="${esc(item.quantity)}" />
+          <button class="btn btn-ghost btn-small" data-shop-step="${idx}" data-step="1" type="button">+</button>
+        </div>
+        <div class="card-meta">${esc(item.unit || "item")} · ${item.availability || "likely available"} · ${formatMoney(item.estimatedPrice || 0)} each</div>
+      </div>`
+      )
+      .join("");
+  }
+
+  function computeStoreTotal(store) {
+    const base = listItems
+      .filter((item) => item.selected)
+      .reduce((sum, item) => sum + Number(item.estimatedPrice || 0), 0);
+    const n = String(store.name || "").toLowerCase();
+    const multiplier = n.includes("walmart") || n.includes("target") ? 0.95 : n.includes("whole foods") || n.includes("trader joe") ? 1.1 : 1.0;
+    return Number((base * multiplier).toFixed(2));
+  }
+
+  function renderStores(stores) {
+    const storesWrap = $("#shopStoreWrap", view);
+    if (!stores || !stores.length) {
+      storesWrap.innerHTML = `<div class="ghost-hero"><h3>No stores loaded</h3><p>Select an address to compare stores.</p></div>`;
+      return;
+    }
+    storesWrap.innerHTML = stores
+      .map((store) => {
+        const estimatedBasketTotal = computeStoreTotal(store);
+        const selectedCount = listItems.filter((x) => x.selected).length;
+        return `
+          <article class="card">
+            <h3>${esc(store.name)}</h3>
+            <p class="card-meta">${esc(store.address || "")}</p>
+            <p class="card-meta">${store.distanceMiles ? `${store.distanceMiles} mi` : ""} ${store.rating ? `· ⭐ ${store.rating}` : ""} ${
+          store.openNow === null ? "" : store.openNow ? "· Open now" : "· Closed"
+        }</p>
+            <p><strong>${formatMoney(estimatedBasketTotal)}</strong> estimated basket</p>
+            <p class="card-meta">${selectedCount} selected ingredients likely available</p>
+            <div class="card-actions">
+              ${
+                store.mapsUrl
+                  ? `<a class="btn btn-secondary btn-small" href="${esc(store.mapsUrl)}" target="_blank" rel="noopener noreferrer">Maps</a>`
+                  : ""
+              }
+            </div>
+          </article>
+        `;
+      })
+      .join("");
+  }
+
+  async function triggerStoreSearch() {
+    const storesWrap = $("#shopStoreWrap", view);
+    if (!selectedLocation || !Number.isFinite(selectedLocation.lat) || !Number.isFinite(selectedLocation.lng)) {
+      showToast("Pick an address suggestion first.", true);
+      return;
+    }
+    storesWrap.innerHTML = `<div class="status-chip"><span class="spinner"></span><span>Finding nearby stores…</span></div>`;
+    try {
+      const data = await apiJson("/api/shop/stores", {
+        method: "POST",
+        body: JSON.stringify({
+          lat: selectedLocation.lat,
+          lng: selectedLocation.lng,
+          radiusMiles: Number($("#shopRadius", view).value || 10)
+        })
+      });
+      currentStores = data.stores || [];
+      if (!currentStores.length) {
+        storesWrap.innerHTML = `<div class="ghost-hero"><h3>No stores found</h3><p>Try a larger radius or another address.</p></div>`;
+        return;
+      }
+      renderStores(currentStores);
+    } catch (error) {
+      storesWrap.innerHTML = `<div class="ghost-hero"><h3>Store lookup failed</h3><p>${esc(error.message || "Please try again.")}</p></div>`;
+    }
+  }
+
+  $("#buildShopList", view).addEventListener("click", async () => {
+    const recipeIds = readSelectedRecipeIds();
+    if (!recipeIds.length) {
+      showToast("Select at least one recipe.", true);
+      return;
+    }
+    const payload = await apiJson("/api/shop/build-list", {
+      method: "POST",
+      body: JSON.stringify({ recipeIds })
+    });
+    listItems = (payload.items || []).map((item) => ({ ...item, selected: true, quantity: Number(item.quantity || 1), estimatedPrice: 0 }));
+    await recalcPricing();
+  });
+
+  $("#shopListWrap", view).addEventListener("click", async (ev) => {
+    const stepBtn = ev.target.closest("[data-shop-step]");
+    if (!stepBtn) return;
+    const idx = Number(stepBtn.getAttribute("data-shop-step"));
+    const step = Number(stepBtn.getAttribute("data-step"));
+    if (!listItems[idx]) return;
+    listItems[idx].quantity = Number((Math.max(0.25, Number(listItems[idx].quantity || 1) + step * 0.25)).toFixed(2));
+    await recalcPricing();
+  });
+
+  $("#shopListWrap", view).addEventListener("change", async (ev) => {
+    const checkbox = ev.target.closest("[data-shop-selected]");
+    const qtyInput = ev.target.closest("[data-shop-qty]");
+    if (checkbox) {
+      const idx = Number(checkbox.getAttribute("data-shop-selected"));
+      if (!listItems[idx]) return;
+      listItems[idx].selected = checkbox.checked;
+      await recalcPricing();
+      return;
+    }
+    if (qtyInput) {
+      const idx = Number(qtyInput.getAttribute("data-shop-qty"));
+      if (!listItems[idx]) return;
+      const next = Number(qtyInput.value);
+      listItems[idx].quantity = Number.isFinite(next) && next > 0 ? next : 1;
+      await recalcPricing();
+    }
+  });
+
+  $("#shopAddress", view).addEventListener("input", () => {
+    const input = $("#shopAddress", view).value.trim();
+    const host = $("#shopAddressSuggest", view);
+    selectedLocation = null;
+    window.clearTimeout(suggestTimer);
+    if (!input || input.length < 3) {
+      host.innerHTML = "";
+      return;
+    }
+    suggestTimer = window.setTimeout(async () => {
+      try {
+        const data = await apiJson(`/api/shop/address-suggest?input=${encodeURIComponent(input)}`);
+        const suggestions = data.suggestions || [];
+        host.innerHTML = suggestions.length
+          ? suggestions
+              .map(
+                (s, idx) => `
+              <button type="button" class="shop-suggest-item" data-suggest="${idx}">
+                <strong>${esc(s.description)}</strong>
+                <span>${esc(s.formattedAddress || "")}</span>
+              </button>
+            `
+              )
+              .join("")
+          : `<div class="card-meta" style="padding:0.45rem 0.6rem">No matches found.</div>`;
+        host._suggestions = suggestions;
+      } catch (error) {
+        host.innerHTML = `<div class="card-meta" style="padding:0.45rem 0.6rem">${esc(error.message || "Could not load suggestions.")}</div>`;
+      }
+    }, 300);
+  });
+
+  $("#shopAddressSuggest", view).addEventListener("click", async (ev) => {
+    const button = ev.target.closest("[data-suggest]");
+    if (!button) return;
+    const idx = Number(button.getAttribute("data-suggest"));
+    const items = $("#shopAddressSuggest", view)._suggestions || [];
+    const pick = items[idx];
+    if (!pick) return;
+    $("#shopAddress", view).value = pick.formattedAddress || pick.description;
+    selectedLocation = { lat: pick.lat, lng: pick.lng };
+    $("#shopAddressSuggest", view).innerHTML = "";
+    await triggerStoreSearch();
+  });
+
+  $("#shopCompare", view).addEventListener("click", async () => {
+    if (!listItems.some((x) => x.selected)) {
+      showToast("Select at least one ingredient.", true);
+      return;
+    }
+    await triggerStoreSearch();
+  });
+
+  $("#shopRadius", view).addEventListener("change", async () => {
+    if (selectedLocation) await triggerStoreSearch();
+  });
+}
+
+async function renderMacros(view) {
+  let recipes = [];
+  try {
+    recipes = (await apiJson("/api/recipes?sort=newest")).recipes || [];
+  } catch {
+    recipes = [];
+  }
+
+  view.innerHTML = `
+    <h1 class="page-title">Macros</h1>
+    <p class="page-sub">Estimate nutrition for saved recipes. Values may be API-backed or AI-estimated.</p>
+    ${
+      recipes.length
+        ? ""
+        : `<div class="ghost-hero"><h3>No recipes saved</h3><p>Save a recipe first to calculate macros.</p><a href="#/import" class="btn btn-primary">Import</a></div>`
+    }
+    <div class="card-panel">
+      <div class="editor-grid">
+        <div class="field">
+          <label for="macroRecipePick">Recipe</label>
+          <select id="macroRecipePick" class="select">
+            <option value="">Select recipe</option>
+            ${recipes.map((r) => `<option value="${esc(r.id)}">${esc(r.title)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field">
+          <label for="macroMode">Display mode</label>
+          <select id="macroMode" class="select">
+            <option value="perServing">Per serving</option>
+            <option value="wholeRecipe">Whole recipe</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary" type="button" id="macroRun" style="margin-top:0.75rem">Calculate macros</button>
+      <button class="btn btn-secondary" type="button" id="macroSave" style="margin-top:0.75rem">Save to recipe</button>
+      <p class="card-meta" id="macroSourceText"></p>
+    </div>
+    <div class="card-panel" id="macroSummaryWrap"><p class="page-sub">Choose a recipe to begin.</p></div>
+    <div class="card-panel">
+      <h3>Ingredient breakdown</h3>
+      <div id="macroIngredientWrap" class="grocery-list"></div>
+    </div>
+  `;
+
+  let selectedRecipe = null;
+  let macroData = null;
+
+  function renderSummary() {
+    const wrap = $("#macroSummaryWrap", view);
+    if (!macroData) {
+      wrap.innerHTML = `<p class="page-sub">No macro data yet.</p>`;
+      return;
+    }
+    const mode = $("#macroMode", view).value;
+    const data = macroData[mode];
+    wrap.innerHTML = `
+      <h3>Nutrition summary (${mode === "perServing" ? "per serving" : "whole recipe"})</h3>
+      <div class="macro-grid">
+        ${[
+          ["Calories", data.calories],
+          ["Protein", `${data.proteinGrams} g`],
+          ["Carbohydrates", `${data.carbsGrams} g`],
+          ["Fat", `${data.fatGrams} g`],
+          ["Fiber", `${data.fiberGrams} g`],
+          ["Sugar", `${data.sugarGrams} g`],
+          ["Sodium", `${data.sodiumMg} mg`]
+        ]
+          .map(
+            ([label, value]) => `
+            <div class="macro-card"><strong>${esc(label)}</strong><div>${esc(value)}</div></div>
+          `
+          )
+          .join("")}
+      </div>
+      <div class="macro-bars">
+        <div><span>Protein</span><div class="macro-bar"><i style="width:${Math.min(100, Number(data.proteinGrams || 0))}%"></i></div></div>
+        <div><span>Carbs</span><div class="macro-bar"><i style="width:${Math.min(100, Number(data.carbsGrams || 0))}%"></i></div></div>
+        <div><span>Fat</span><div class="macro-bar"><i style="width:${Math.min(100, Number(data.fatGrams || 0))}%"></i></div></div>
+      </div>
+    `;
+  }
+
+  function renderIngredients() {
+    const wrap = $("#macroIngredientWrap", view);
+    if (!macroData || !macroData.ingredients || !macroData.ingredients.length) {
+      wrap.innerHTML = `<div class="ghost-hero"><h3>No ingredients</h3><p>This recipe has no ingredients to analyze.</p></div>`;
+      return;
+    }
+    wrap.innerHTML = macroData.ingredients
+      .map(
+        (item, idx) => `
+      <div class="shop-item-row">
+        <label><input type="checkbox" data-macro-inc="${idx}" ${item.included !== false ? "checked" : ""} /> ${esc(item.name)}</label>
+        <div class="shop-item-controls">
+          <input class="input shop-qty-input" data-macro-qty="${idx}" value="${esc(item.amount || "")}" />
+          <span class="card-meta">${esc(item.unit || "")}</span>
+        </div>
+        <div class="card-meta">${item.calories} kcal · P ${item.proteinGrams}g · C ${item.carbsGrams}g · F ${item.fatGrams}g</div>
+      </div>`
+      )
+      .join("");
+  }
+
+  async function recalculate() {
+    if (!selectedRecipe) return;
+    $("#macroSourceText", view).textContent = "Calculating macros...";
+    const payload = {
+      recipeId: selectedRecipe.id,
+      ingredients: (macroData?.ingredients || selectedRecipe.ingredients || []).map((item) => ({
+        name: item.name,
+        amount: item.amount,
+        unit: item.unit,
+        included: item.included !== false
+      }))
+    };
+    try {
+      macroData = await apiJson("/api/macros/calculate", { method: "POST", body: JSON.stringify(payload) });
+      $("#macroSourceText", view).textContent =
+        macroData.source === "usda"
+          ? "Nutrition source: USDA."
+          : "AI-estimated nutrition. Values are approximate.";
+      renderSummary();
+      renderIngredients();
+    } catch (error) {
+      $("#macroSourceText", view).textContent = "";
+      showToast(error.message || "Could not calculate macros.", true);
+    }
+  }
+
+  $("#macroRun", view).addEventListener("click", async () => {
+    const recipeId = $("#macroRecipePick", view).value;
+    if (!recipeId) {
+      showToast("Select a recipe first.", true);
+      return;
+    }
+    selectedRecipe = recipes.find((r) => r.id === recipeId) || null;
+    if (!selectedRecipe || !(selectedRecipe.ingredients || []).length) {
+      showToast("Recipe has no ingredients.", true);
+      return;
+    }
+    await recalculate();
+  });
+
+  $("#macroMode", view).addEventListener("change", renderSummary);
+
+  $("#macroIngredientWrap", view).addEventListener("change", async (ev) => {
+    const include = ev.target.closest("[data-macro-inc]");
+    const qty = ev.target.closest("[data-macro-qty]");
+    if (!macroData) return;
+    if (include) {
+      const idx = Number(include.getAttribute("data-macro-inc"));
+      if (macroData.ingredients[idx]) macroData.ingredients[idx].included = include.checked;
+      await recalculate();
+      return;
+    }
+    if (qty) {
+      const idx = Number(qty.getAttribute("data-macro-qty"));
+      if (macroData.ingredients[idx]) macroData.ingredients[idx].amount = qty.value;
+      await recalculate();
+    }
+  });
+
+  $("#macroSave", view).addEventListener("click", async () => {
+    if (!selectedRecipe || !macroData) {
+      showToast("Calculate macros first.", true);
+      return;
+    }
+    await apiJson(`/api/recipes/${encodeURIComponent(selectedRecipe.id)}/macros`, {
+      method: "PUT",
+      body: JSON.stringify({ macros: macroData })
+    });
+    showToast("Macros saved to recipe.");
+  });
+}
+
 function renderCook(view, id) {
   view.innerHTML = `<div class="ghost-hero"><h3>Guided cooking</h3><p>Coming in the next pass — timers, progress, and calm steps.</p><a class="btn btn-primary" href="#/recipe/${encodeURIComponent(id)}">Back to recipe</a></div>`;
 }
@@ -1148,6 +1617,8 @@ async function route() {
   if (r.name === "recipe" && r.id) return renderRecipe(view, r.id);
   if (r.name === "grocery") return renderGrocery(view);
   if (r.name === "planner") return renderPlanner(view);
+  if (r.name === "shop") return renderShop(view);
+  if (r.name === "macros") return renderMacros(view);
   return renderHome(view);
 }
 

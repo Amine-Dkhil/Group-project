@@ -26,6 +26,7 @@ function rowToRecipe(row) {
     ingredients: safeJson(row.ingredients_json, []),
     equipment: safeJson(row.equipment_json, []),
     steps: safeJson(row.steps_json, []),
+    macros: safeJson(row.macros_json, null),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -108,12 +109,12 @@ function insertRecipe(payload) {
       id, title, description, cuisine, difficulty,
       prep_time_minutes, cook_time_minutes, total_time_minutes, servings,
       source_type, source_url, food_content, confidence, tags, favorite,
-      ingredients_json, equipment_json, steps_json, created_at, updated_at
+      ingredients_json, equipment_json, steps_json, macros_json, created_at, updated_at
     ) VALUES (
       @id, @title, @description, @cuisine, @difficulty,
       @prep_time_minutes, @cook_time_minutes, @total_time_minutes, @servings,
       @source_type, @source_url, @food_content, @confidence, @tags, @favorite,
-      @ingredients_json, @equipment_json, @steps_json, @created_at, @updated_at
+      @ingredients_json, @equipment_json, @steps_json, @macros_json, @created_at, @updated_at
     )
   `);
 
@@ -136,6 +137,7 @@ function insertRecipe(payload) {
     ingredients_json: JSON.stringify(payload.ingredients ?? []),
     equipment_json: JSON.stringify(payload.equipment ?? []),
     steps_json: JSON.stringify(payload.steps ?? []),
+    macros_json: JSON.stringify(payload.macros ?? null),
     created_at: payload.createdAt || ts,
     updated_at: ts
   });
@@ -154,7 +156,8 @@ function updateRecipe(id, payload) {
     ingredients: payload.ingredients !== undefined ? payload.ingredients : existing.ingredients,
     equipment: payload.equipment !== undefined ? payload.equipment : existing.equipment,
     steps: payload.steps !== undefined ? payload.steps : existing.steps,
-    tags: payload.tags !== undefined ? payload.tags : existing.tags
+    tags: payload.tags !== undefined ? payload.tags : existing.tags,
+    macros: payload.macros !== undefined ? payload.macros : existing.macros
   };
 
   db.prepare(
@@ -177,6 +180,7 @@ function updateRecipe(id, payload) {
       ingredients_json = @ingredients_json,
       equipment_json = @equipment_json,
       steps_json = @steps_json,
+      macros_json = @macros_json,
       updated_at = @updated_at
     WHERE id = @id
   `
@@ -199,6 +203,7 @@ function updateRecipe(id, payload) {
     ingredients_json: JSON.stringify(merged.ingredients ?? []),
     equipment_json: JSON.stringify(merged.equipment ?? []),
     steps_json: JSON.stringify(merged.steps ?? []),
+    macros_json: JSON.stringify(merged.macros ?? null),
     updated_at: nowIso()
   });
 
